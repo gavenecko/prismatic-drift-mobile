@@ -1,0 +1,14 @@
+CREDITS
+
+Prismatic Drift is a modern, independently implemented project
+created by Gavenecko.
+
+Its original inspiration is Zone Rings from Outer-Space,
+created by John Biddiscombe. We acknowledge his work and the
+creative idea that inspired this project.
+
+Prismatic Drift is not an official continuation and is not
+affiliated with or endorsed by John Biddiscombe.
+
+The original Zone Rings executable and installer are not
+included in this release package.

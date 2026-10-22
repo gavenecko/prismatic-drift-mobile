@@ -1,0 +1,1705 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zone Rings — Extended</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#000;color:#111;font:14px Arial,sans-serif}
+canvas#screen{position:fixed;inset:0;width:100%;height:100%}
+#panel{position:absolute;top:20px;left:50%;transform:translateX(-50%);
+width:min(1020px,96vw);max-height:94vh;overflow:auto;background:#d4d0c8;
+padding:8px;border:2px outset #eee;box-shadow:0 12px 50px #0009}
+header{background:#000080;color:white;padding:7px;font-weight:bold;
+display:flex;justify-content:space-between;align-items:center}
+main{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:8px 0}
+fieldset{border:2px groove #fff;margin:0 0 9px;padding:9px;min-width:0}
+legend{font-weight:bold}
+.row{display:grid;grid-template-columns:125px 1fr 40px;
+align-items:center;gap:5px;margin:7px 0}
+.row output{text-align:right;font-size:12px}
+input[type=range]{width:100%;accent-color:#000080}
+select,button,input[type=text]{font:inherit;background:#eee;
+border:2px outset white;padding:5px;max-width:100%}
+select{width:100%;margin:5px 0}
+button:active{border-style:inset}
+.check{display:inline-flex;align-items:center;margin:5px 8px 5px 0}
+#weights{display:grid;grid-template-columns:repeat(12,1fr);gap:6px 1px}
+.weight{display:flex;flex-direction:column;align-items:center;font-size:12px}
+.weight input{writing-mode:vertical-lr;direction:rtl;height:70px;width:20px}
+footer,.buttons{display:flex;gap:5px;flex-wrap:wrap}
+footer button{flex:1}
+small{display:block;margin:8px 0;color:#444;line-height:1.4}
+#hint{position:fixed;bottom:12px;left:15px;color:#aaa;
+font:12px Arial;pointer-events:none}
+.hidden{display:none!important}
+#playlist{padding:0;list-style:none;margin:5px 0;max-height:170px;overflow:auto}
+#playlist li{display:flex;align-items:center;gap:3px;padding:4px}
+#playlist li span{flex:1}
+#playlist li.active{background:#000080;color:white}
+#playlist button{padding:2px 6px}
+#status{min-height:30px;font-size:12px;padding:5px}
+@media(max-width:750px){main{grid-template-columns:1fr}}
+</style>
+<canvas id="screen"></canvas>
+<div id="hint">Tab: settings · F: fullscreen · Space / right click: pause</div>
+<section id="panel">
+<header>
+<span>Zone Rings from Outer-Space — Extended Recreation</span>
+<button id="close">×</button>
+</header>
+<main>
+<div>
+<fieldset id="ringControls"><legend>Zone rings</legend></fieldset>
+<fieldset id="aspectControls"><legend>Aspect distortion</legend></fieldset>
+<fieldset id="rotationControls"><legend>Rotation control</legend></fieldset>
+<fieldset id="drawControls"><legend>Drawing and trails</legend></fieldset>
+</div>
+<div>
+<fieldset><legend>Probability density — 1 to 24 sides</legend>
+<div id="weights"></div>
+<div class="buttons" style="margin-top:8px">
+<button id="zero">Zero all</button>
+<button id="max">Max all</button>
+<button id="hexagon">Hexagons only</button>
+</div>
+</fieldset>
+<fieldset id="colourControls"><legend>Colour control</legend></fieldset>
+<fieldset><legend>Pause mode (right button)</legend>
+<select id="pauseMode">
+<option value="freeze">Freeze</option>
+<option value="cycle">Continue colour cycling</option>
+</select>
+</fieldset>
+<small>Independent recreation inspired by John Biddiscombe's Zone Rings.
+Settings scales and animation formulas are approximate.</small>
+</div>
+<div>
+<fieldset id="shapeControls"><legend>Shape changing</legend></fieldset>
+<fieldset id="motionControls"><legend>Motion control</legend></fieldset>
+<fieldset><legend>Presets and playlist</legend>
+<select id="preset" aria-label="Preset"></select>
+<div class="buttons">
+<button id="applyPreset">Apply</button>
+<button id="addPreset">Save current as preset</button>
+<button id="append">Add to playlist</button>
+</div>
+<select id="order" aria-label="Playback order">
+<option value="ordered">Play in set order</option>
+<option value="random">Play randomly</option>
+</select>
+<label class="row">Seconds per preset
+<input id="interval" type="range" min="5" max="300" value="30">
+<output></output></label>
+<ol id="playlist"></ol>
+<div class="buttons">
+<button id="play">Start playback</button>
+<button id="next">Next preset</button>
+</div>
+<div id="status"></div>
+<small>↑ / ↓ changes the order. ▶ starts from that entry.
+Playback resumes from the saved position when you reopen this file.</small>
+</fieldset>
+</div>
+</main>
+<footer>
+<button id="view">View animation</button>
+<button id="pause">Pause animation</button>
+<button id="clear">Clear screen</button>
+<button id="save">Export settings</button>
+<button id="load">Import settings</button>
+<button id="full">Fullscreen</button>
+</footer>
+<input id="file" type="file" accept=".json" hidden>
+</section>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const canvas=$("screen"),ctx=canvas.getContext("2d");
+const TAU=Math.PI*2,STORAGE="prismatic-drift-mobile-test1";
+let W=innerWidth,H=innerHeight,t=0,last=0,paused=false;
+let mobileLast=0,mobileFps=30;
+let rings=[],born=0,serial=0,shape=6,nextShape=0,nextJump=0;
+let origin={x:0,y:0},target={x:0,y:0},mouse={x:0,y:0};
+let rgbPoints=[],trailClock=0,buckets=[],transition=null;
+let saveTimer=0,lastSave=0,uiClock=0;
+let playing=false,playlistIndex=0,playlistElapsed=0;
+let playlist=["classic","flower","wander","stars"];
+let library=[];
+const controls=[],weights=[];
+function value(id){return Number($(id).value)}
+function checked(id){return $(id).checked}
+function range(parent,id,label,min,max,start,step=1){
+ const row=document.createElement("label");row.className="row";
+ row.innerHTML=`<span>${label}</span><input id="${id}" type="range"
+ min="${min}" max="${max}" step="${step}" value="${start}"><output></output>`;
+ $(parent).append(row);controls.push($(id));
+}
+function check(parent,id,label,start=false){
+ const row=document.createElement("label");row.className="check";
+ row.innerHTML=`<input id="${id}" type="checkbox" ${start?"checked":""}> ${label}`;
+ $(parent).append(row);controls.push($(id));
+}
+function select(parent,id,options){
+ const e=document.createElement("select");e.id=id;e.setAttribute("aria-label",id);
+ for(const [v,label] of options){
+ const option=document.createElement("option");option.value=v;option.textContent=label;
+ e.append(option);
+ }
+ $(parent).append(e);controls.push(e);
+}
+range("ringControls","count","Max. Zonerings",10,2000,140);
+range("ringControls","vanish","Vanishing point",0,100,30);
+range("ringControls","perspective","Perspective",0,100,50);
+range("ringControls","zoom","Magnification",20,200,100);
+range("ringControls","speed","Animation speed",5,200,55);
+check("ringControls","inward","In/Out");
+check("ringControls","erase","Erase",true);
+check("ringControls","hideCursor","Hide cursor");
+check("aspectControls","sync","Sync all");
+check("aspectControls","lock","Lock x,y");
+range("aspectControls","ax","Amplitude x",0,100,18);
+range("aspectControls","ay","Amplitude y",0,100,25);
+range("aspectControls","fx","Frequency x",0,100,24);
+range("aspectControls","fy","Frequency y",0,100,31);
+select("rotationControls","rotation",[
+ ["sine","Sinusoidal rotation pattern"],["random","Random rotation pattern"],
+ ["none","No rotation"]]);
+range("rotationControls","ra","Amplitude",0,100,45);
+range("rotationControls","rf","Frequency",0,100,25);
+range("rotationControls","precession","Precession",-100,100,12);
+select("drawControls","draw",[["lines","Solid lines"],["dots","Just vertices"]]);
+range("drawControls","lineWidth","Line thickness",.5,24,1,.5);
+range("drawControls","dotSize","Dot size",1,30,2);
+range("drawControls","trail","Trail duration (s)",0,60,4,.5);
+select("colourControls","palette",[
+ ["rgb","Random loop in RGB space"],["rainbow","Rainbow"],["fire","Fire"],
+ ["ice","Ice"],["mono","Green phosphor"]]);
+range("colourControls","points","Control points",3,12,6);
+range("colourControls","gamma","Pseudo Gamma",30,200,100);
+range("colourControls","cycling","Palette cycling",-100,100,15);
+range("colourControls","step","Colour step size",0,100,22);
+const newButton=document.createElement("button");
+newButton.id="newPalette";newButton.textContent="New RGB loop";
+$("colourControls").append(newButton);
+select("shapeControls","shapeMode",[["periodic","Periodic"],["random","Random"]]);
+range("shapeControls","shapeFreq","Frequency",0,100,25);
+select("motionControls","motion",[
+ ["parametric","Parametric motion x,y"],["fluid","Random fluid motion"],
+ ["jumps","Random periodic jumps"],["mouse","Follow mouse"],["none","No motion"]]);
+range("motionControls","damping","Damping",0,100,75);
+range("motionControls","motionAmp","Motion amplitude",0,100,28);
+range("motionControls","motionFreq","Motion frequency",1,100,20);
+controls.push($("pauseMode"));
+for(let n=1;n<=24;n++){
+ const label=document.createElement("label");label.className="weight";
+ label.innerHTML=`<input type="range" min="0" max="100"
+ value="${n===6?100:0}" aria-label="Probability of ${n} sides"><span>${n}</span>`;
+ $("weights").append(label);weights.push(label.querySelector("input"));
+}
+function outputs(){
+ document.querySelectorAll(".row").forEach(row=>{
+ const input=row.querySelector("input"),out=row.querySelector("output");
+ if(input&&out)out.textContent=input.value;
+ });
+ canvas.style.cursor=checked("hideCursor")?"none":"default";
+}
+function makeSurface(){
+ const c=document.createElement("canvas");c.width=W;c.height=H;
+ return {canvas:c,context:c.getContext("2d")};
+}
+let permanent=makeSurface();
+function clear(){
+ rings=[];buckets=[];transition=null;
+ permanent.context.clearRect(0,0,W,H);ctx.clearRect(0,0,W,H);
+}
+function resize(){
+ const cap=Number(document.documentElement.dataset.mobilePixels)||960;
+ const scale=Math.min(1,cap/Math.max(innerWidth,innerHeight));
+ W=Math.max(1,Math.round(innerWidth*scale));H=Math.max(1,Math.round(innerHeight*scale));canvas.width=W;canvas.height=H;
+ permanent=makeSurface();clear();
+}
+function newPalette(){
+ rgbPoints=Array.from({length:value("points")},()=>[
+ Math.random()*255,Math.random()*255,Math.random()*255]);
+}
+function visualSettings(){
+ return {
+ controls:Object.fromEntries(controls.map(e=>[
+ e.id,e.type==="checkbox"?e.checked:e.value])),
+ weights:weights.map(e=>Number(e.value)),
+ rgbPoints:rgbPoints.map(p=>[...p])
+ };
+}
+function applyVisual(data){
+ if(!data||!data.controls)return;
+ for(const e of controls){
+ let v=data.controls[e.id];
+ if(v===undefined&&(e.id==="lineWidth"||e.id==="dotSize"))v=data.controls.width;
+ if(v===undefined)continue;
+ if(e.type==="checkbox")e.checked=Boolean(v);
+ else if(e.tagName==="SELECT"){
+ if([...e.options].some(o=>o.value===String(v)))e.value=String(v);
+ }else if(Number.isFinite(Number(v)))e.value=String(v);
+ }
+ if(Array.isArray(data.weights))weights.forEach((e,i)=>{
+ e.value=Math.max(0,Math.min(100,Number(data.weights[i])||0));
+ });
+ if(Array.isArray(data.rgbPoints)&&data.rgbPoints.length>=3&&
+ data.rgbPoints.every(p=>Array.isArray(p)&&p.length===3&&
+ p.every(v=>Number.isFinite(v)&&v>=0&&v<=255))){
+ rgbPoints=data.rgbPoints.map(p=>[...p]);
+ }else newPalette();
+ nextShape=0;outputs();
+}
+function snapshot(){
+ const image=makeSurface();
+ image.context.drawImage(canvas,0,0);
+ transition={...image,start:trailClock,duration:Math.max(value("trail"),1)};
+ permanent.context.drawImage(canvas,0,0);
+}
+function chooseShape(){
+ const total=weights.reduce((s,w)=>s+Number(w.value),0);
+ if(!total)return 6;
+ let r=Math.random()*total;
+ for(let i=0;i<weights.length;i++){
+ r-=Number(weights[i].value);if(r<0)return i+1;
+ }
+ return 24;
+}
+function colour(index){
+ const u=((index*value("step")*.0009+t*value("cycling")*.002)%1+1)%1;
+ const p=$("palette").value;
+ if(p==="rainbow")return `hsl(${u*360},100%,60%)`;
+ if(p==="fire")return `hsl(${u*65},100%,${40+u*25}%)`;
+ if(p==="ice")return `hsl(${175+u*75},100%,${45+u*30}%)`;
+ if(p==="mono")return `hsl(120,100%,${25+u*55}%)`;
+ const pos=u*rgbPoints.length,i=Math.floor(pos),a=rgbPoints[i];
+ const b=rgbPoints[(i+1)%rgbPoints.length],f=(1-Math.cos((pos-i)*Math.PI))/2;
+ return "rgb("+a.map((v,k)=>Math.round(255*Math.pow(
+ (v*(1-f)+b[k]*f)/255,100/value("gamma")))).join(",")+")";
+}
+function updateOrigin(dt){
+ const amp=Math.min(W,H)*value("motionAmp")*.005;
+ const f=value("motionFreq")*.035,mode=$("motion").value;
+ if(mode==="none"){target.x=0;target.y=0}
+ if(mode==="mouse"){target.x=mouse.x;target.y=mouse.y}
+ if(mode==="parametric"){
+ target.x=Math.sin(t*f)*amp;target.y=Math.sin(t*f*1.31+.7)*amp;
+ }
+ if(mode==="fluid"){
+ target.x=(Math.sin(t*f*.77)+Math.sin(t*f*1.71)*.4)*amp;
+ target.y=(Math.cos(t*f*.63)+Math.sin(t*f*1.39)*.4)*amp;
+ }
+ if(mode==="jumps"&&t>=nextJump){
+ target.x=(Math.random()*2-1)*amp;target.y=(Math.random()*2-1)*amp;
+ nextJump=t+Math.max(.3,6-value("motionFreq")*.055);
+ }
+ const blend=1-Math.exp(-dt*(1+(100-value("damping"))*.2));
+ origin.x+=(target.x-origin.x)*blend;origin.y+=(target.y-origin.y)*blend;
+}
+function drawRing(context,r){
+ const progress=checked("inward")?1-r.age:r.age;
+ const extent=Math.hypot(W,H)*.65*value("zoom")/100;
+ const radius=3+Math.pow(Math.max(0,progress),1+value("perspective")*.018)*extent;
+ const phase=checked("sync")?0:r.index*.04;
+ const ax=value("ax")*.009,ay=checked("lock")?ax:value("ay")*.009;
+ const fx=value("fx")*.045,fy=checked("lock")?fx:value("fy")*.045;
+ const sx=1+ax*Math.sin(t*fx+phase),sy=1+ay*Math.sin(t*fy+phase+1.4);
+ const blend=Math.pow(Math.max(0,1-progress),1+value("vanish")*.025);
+ const x=W/2+r.x*blend,y=H/2+r.y*blend;
+ let angle=r.angle;
+ if($("rotation").value==="sine")
+ angle+=Math.sin(t*value("rf")*.035+r.index*.015)*value("ra")*.04;
+ if($("rotation").value==="random")angle+=t*r.spin*value("ra")*.025;
+ if($("rotation").value!=="none")angle+=t*value("precession")*.008;
+ context.strokeStyle=context.fillStyle=colour(r.index);
+ context.lineWidth=value("lineWidth");
+ const dots=$("draw").value==="dots"||r.sides===1;
+ const size=value("dotSize");
+ if(!dots)context.beginPath();
+ for(let k=0;k<r.sides;k++){
+ const a=angle+k*TAU/r.sides;
+ const px=x+Math.cos(a)*radius*sx,py=y+Math.sin(a)*radius*sy;
+ if(dots){
+ context.beginPath();context.arc(px,py,size/2,0,TAU);context.fill();
+ }else if(k===0)context.moveTo(px,py);
+ else context.lineTo(px,py);
+ }
+ if(!dots){context.closePath();context.stroke()}
+}
+function paintAll(context){for(const r of rings)drawRing(context,r)}
+function render(){
+ ctx.globalAlpha=1;ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);
+ if(!checked("erase")){
+ ctx.drawImage(permanent.canvas,0,0);
+ }else{
+ if(transition){
+ const age=trailClock-transition.start;
+ if(age>=transition.duration)transition=null;
+ else{
+ ctx.globalAlpha=1-age/transition.duration;
+ ctx.drawImage(transition.canvas,0,0);ctx.globalAlpha=1;
+ }
+ }
+ for(const b of buckets)ctx.drawImage(b.canvas,0,0);
+ }
+ paintAll(ctx);
+}
+function recordTrails(){
+ if(!checked("erase")){paintAll(permanent.context);return}
+ const duration=value("trail");
+ if(duration===0)return;
+ const slice=Math.max(.05,duration/12);
+ let b=buckets[buckets.length-1];
+ if(!b||trailClock>=b.end||b.duration!==duration){
+ b={...makeSurface(),end:trailClock+slice,duration};
+ buckets.push(b);
+ }
+ paintAll(b.context);
+}
+function defaultPresets(){
+ const base=visualSettings();
+ const specs=[
+ ["classic","Classic polygon tunnel",6,{motion:"parametric",rotation:"sine",
+ ax:18,ay:25,ra:45,count:140,draw:"lines",palette:"rgb"}],
+ ["flower","Spinning flower",24,{motion:"none",rotation:"sine",
+ ax:55,ay:55,ra:90,count:210,draw:"lines",palette:"rainbow"}],
+ ["wander","Wandering rings",4,{motion:"fluid",rotation:"random",
+ ax:30,ay:15,ra:65,count:100,draw:"lines",palette:"rgb"}],
+ ["stars","Vertex field",16,{motion:"parametric",rotation:"random",
+ ax:25,ay:40,ra:50,count:600,draw:"dots",palette:"ice"}]
+ ];
+ return specs.map(([id,name,sides,changes])=>{
+ const data=JSON.parse(JSON.stringify(base));
+ Object.assign(data.controls,Object.fromEntries(
+ Object.entries(changes).map(([k,v])=>[k,String(v)])));
+ data.weights=Array.from({length:24},(_,i)=>i+1===sides?100:0);
+ return {id,name,data};
+ });
+}
+function findPreset(id){return library.find(p=>p.id===id)}
+function applyPreset(id){
+ const preset=findPreset(id);if(!preset)return;
+ snapshot();applyVisual(preset.data);
+ rings=[];born=0;nextShape=0;newPalette();
+ $("preset").value=id;scheduleSave();
+}
+function renderLibrary(){
+ const selected=$("preset").value;$("preset").replaceChildren();
+ for(const p of library){
+ const option=document.createElement("option");option.value=p.id;
+ option.textContent=p.name;$("preset").append(option);
+ }
+ if(findPreset(selected))$("preset").value=selected;
+ renderPlaylist();
+}
+function renderPlaylist(){
+ $("playlist").replaceChildren();
+ playlist.forEach((id,i)=>{
+ const p=findPreset(id);if(!p)return;
+ const li=document.createElement("li");
+ if(i===playlistIndex)li.className="active";
+ const name=document.createElement("span");
+ name.textContent=`${i+1}. ${p.name}`;li.append(name);
+ for(const [label,title,action] of [
+ ["↑","Move up",()=>moveEntry(i,-1)],
+ ["↓","Move down",()=>moveEntry(i,1)],
+ ["▶","Play from here",()=>{
+ playlistIndex=i;playlistElapsed=0;applyPreset(id);
+ playing=true;renderPlaylist();scheduleSave();
+ }],
+ ["×","Remove",()=>removeEntry(i)]
+ ]){
+ const b=document.createElement("button");
+ b.textContent=label;b.title=title;b.onclick=action;li.append(b);
+ }
+ $("playlist").append(li);
+ });
+ updateStatus();
+}
+function moveEntry(i,d){
+ const j=i+d;if(j<0||j>=playlist.length)return;
+ [playlist[i],playlist[j]]=[playlist[j],playlist[i]];
+ if(playlistIndex===i)playlistIndex=j;
+ else if(playlistIndex===j)playlistIndex=i;
+ renderPlaylist();scheduleSave();
+}
+function removeEntry(i){
+ const wasCurrent=i===playlistIndex;
+ playlist.splice(i,1);
+ if(i<playlistIndex)playlistIndex--;
+ if(playlistIndex>=playlist.length)playlistIndex=0;
+ if(!playlist.length){playing=false;playlistElapsed=0}
+ else if(wasCurrent){
+ playlistElapsed=0;if(playing)applyPreset(playlist[playlistIndex]);
+ }
+ renderPlaylist();scheduleSave();
+}
+function advance(){
+ if(!playlist.length)return;
+ if($("order").value==="random"&&playlist.length>1){
+ let next=playlistIndex;
+ while(next===playlistIndex)next=Math.floor(Math.random()*playlist.length);
+ playlistIndex=next;
+ }else playlistIndex=(playlistIndex+1)%playlist.length;
+ playlistElapsed=0;applyPreset(playlist[playlistIndex]);renderPlaylist();
+}
+function updateStatus(){
+ $("play").textContent=playing?"Stop playback":"Start playback";
+ const current=findPreset(playlist[playlistIndex]);
+ const remaining=Math.ceil(Math.max(0,value("interval")-playlistElapsed));
+ $("status").textContent=!playlist.length?"Add a preset to the playlist.":
+ `${playing?"Playing":"Saved position"}: ${current?current.name:"—"} · ${
+ playlistIndex+1}/${playlist.length} · ${remaining}s remaining${
+ paused?" · animation paused":""}`;
+}
+function state(){
+ return {version:2,visual:visualSettings(),library,playlist,playlistIndex,
+ playlistElapsed,playing,order:$("order").value,interval:value("interval")};
+}
+function persist(){
+ try{localStorage.setItem(STORAGE,JSON.stringify(state()))}catch{}
+}
+function scheduleSave(){
+ clearTimeout(saveTimer);saveTimer=setTimeout(persist,250);
+}
+function restore(data){
+ if(data.version===1){
+ applyVisual(data);scheduleSave();return;
+ }
+ if(data.version!==2||!data.visual||!Array.isArray(data.library))
+ throw Error("Invalid settings file");
+ const valid=data.library.filter(p=>p&&typeof p.id==="string"&&
+ typeof p.name==="string"&&p.data&&p.data.controls);
+ if(!valid.length)throw Error("No presets");
+ library=valid;
+ playlist=Array.isArray(data.playlist)?
+ data.playlist.filter(id=>findPreset(id)):library.map(p=>p.id);
+ playlistIndex=Math.max(0,Math.min(playlist.length-1,
+ Math.floor(Number(data.playlistIndex)||0)));
+ $("order").value=data.order==="random"?"random":"ordered";
+ $("interval").value=Number(data.interval)||30;
+ playlistElapsed=Math.max(0,Math.min(value("interval"),
+ Number(data.playlistElapsed)||0));
+ playing=Boolean(data.playing)&&playlist.length>0;
+ applyVisual(data.visual);renderLibrary();
+ if(playlist.length)$("preset").value=playlist[playlistIndex];
+ outputs();
+}
+function frame(now){
+ if(document.hidden){last=0;requestAnimationFrame(frame);return}
+ if(now-mobileLast<1000/mobileFps){requestAnimationFrame(frame);return}
+ mobileLast=now;
+ const dt=last?Math.min((now-last)/1000,.05):0;last=now;
+ if(!paused||$("pauseMode").value==="cycle")t+=dt;
+ if(!paused){
+ trailClock+=dt;
+ buckets=buckets.filter(b=>trailClock<b.end+b.duration);
+ if(playing&&playlist.length){
+ playlistElapsed+=dt;
+ if(playlistElapsed>=value("interval"))advance();
+ }
+ updateOrigin(dt);
+ if(t>=nextShape){
+ shape=chooseShape();
+ const interval=Math.max(.15,8-value("shapeFreq")*.075);
+ nextShape=t+($("shapeMode").value==="random"?
+ interval*(.25+Math.random()*1.5):interval);
+ }
+ const life=12/(value("speed")/55);
+ born+=dt*value("count")/life;
+ while(born>=1){
+ born--;
+ rings.push({age:0,index:serial++,sides:shape,x:origin.x,y:origin.y,
+ angle:t*.13,spin:Math.random()*2-1});
+ }
+ for(const r of rings)r.age+=dt/life;
+ rings=rings.filter(r=>r.age<1);
+ if(rings.length>value("count"))rings.splice(0,rings.length-value("count"));
+ recordTrails();
+ }
+ render();
+ if(now-uiClock>500){uiClock=now;updateStatus()}
+ if(now-lastSave>3000){lastSave=now;persist()}
+ requestAnimationFrame(frame);
+}
+function togglePanel(){$("panel").classList.toggle("hidden")}
+function togglePause(){
+ paused=!paused;
+ $("pause").textContent=paused?"Resume animation":"Pause animation";
+ updateStatus();
+}
+async function fullscreen(){
+ try{
+ if(document.fullscreenElement)await document.exitFullscreen();
+ else await document.documentElement.requestFullscreen();
+ }catch{}
+}
+$("close").onclick=$("view").onclick=togglePanel;
+$("pause").onclick=togglePause;$("clear").onclick=clear;$("full").onclick=fullscreen;
+$("zero").onclick=()=>{weights.forEach(e=>e.value=0);scheduleSave()};
+$("max").onclick=()=>{weights.forEach(e=>e.value=100);scheduleSave()};
+$("hexagon").onclick=()=>{
+ weights.forEach((e,i)=>e.value=i===5?100:0);scheduleSave();
+};
+$("newPalette").onclick=()=>{newPalette();scheduleSave()};
+$("applyPreset").onclick=()=>{
+ playing=false;applyPreset($("preset").value);updateStatus();
+};
+$("addPreset").onclick=()=>{
+ const name=prompt("Name for this preset:");
+ if(!name||!name.trim())return;
+ const id="custom-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
+ library.push({id,name:name.trim(),data:visualSettings()});
+ renderLibrary();$("preset").value=id;scheduleSave();
+};
+$("append").onclick=()=>{
+ if(!findPreset($("preset").value))return;
+ playlist.push($("preset").value);renderPlaylist();scheduleSave();
+};
+$("play").onclick=()=>{
+ if(!playlist.length)return;
+ playing=!playing;
+ if(playing)applyPreset(playlist[playlistIndex]);
+ renderPlaylist();scheduleSave();
+};
+$("next").onclick=advance;
+$("panel").addEventListener("input",e=>{
+ outputs();
+ if(e.target.id==="points")newPalette();
+ if(e.target.id==="trail"&&value("trail")===0)buckets=[];
+ updateStatus();scheduleSave();
+});
+$("panel").addEventListener("change",scheduleSave);
+$("save").onclick=()=>{
+ const url=URL.createObjectURL(new Blob(
+ [JSON.stringify(state(),null,2)],{type:"application/json"}));
+ const a=document.createElement("a");a.href=url;
+ a.download="ZoneRings-extended-settings.json";a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+$("load").onclick=()=>$("file").click();
+$("file").onchange=async()=>{
+ try{
+ const file=$("file").files[0];
+ if(file){
+ const data=JSON.parse(await file.text());
+ restore(data);clear();scheduleSave();
+ }
+ }catch{alert("Could not read this ZoneRings settings file.")}
+ $("file").value="";
+};
+canvas.onpointermove=e=>{mouse.x=e.clientX-W/2;mouse.y=e.clientY-H/2};
+canvas.oncontextmenu=e=>{e.preventDefault();togglePause()};
+document.addEventListener("keydown",e=>{
+ if(e.target.matches("input,select,button"))return;
+ if(e.key==="Tab"){e.preventDefault();togglePanel()}
+ if(e.code==="Space"){e.preventDefault();togglePause()}
+ if(e.key.toLowerCase()==="f")fullscreen();
+ if(e.key==="Escape"&&!document.fullscreenElement)
+ $("panel").classList.remove("hidden");
+});
+addEventListener("resize",resize);
+addEventListener("pagehide",persist);
+document.addEventListener("visibilitychange",()=>{
+ if(document.hidden)persist();
+ last=0;
+});
+resize();newPalette();library=defaultPresets();renderLibrary();outputs();
+try{
+ const saved=localStorage.getItem(STORAGE);
+ if(saved)restore(JSON.parse(saved));
+}catch{}
+requestAnimationFrame(frame);
+</script>
+<style id="prismatic-drift-style">
+:root{color-scheme:dark;--accent:#c3a5ff;--cyan:#7ce7f2}
+body{font-family:"Segoe UI",Arial,sans-serif;color:#edf0fa}
+#panel{background:linear-gradient(145deg,#181c2bee,#10121be6);
+border:1px solid #ffffff24;border-radius:22px;padding:16px;
+backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+box-shadow:0 22px 80px #0009,inset 0 1px #ffffff14;
+width:min(1160px,96vw);scrollbar-color:#56516f transparent}
+header{background:transparent;border-bottom:1px solid #ffffff17;
+padding:10px 5px 18px;font-size:20px;letter-spacing:-.4px;color:#f1eaff}
+header span:before{content:"◈";color:var(--cyan);margin-right:12px;font-size:26px}
+header button{border-radius:50%;width:30px;height:30px;padding:0}
+main{gap:12px;margin:16px 0}
+fieldset{background:#ffffff04;border:1px solid #ffffff13;
+border-radius:14px;padding:13px;margin-bottom:12px}
+legend{color:#d9cbfa;font-size:12px;font-weight:600;
+letter-spacing:.3px;padding:0 5px}
+.row{grid-template-columns:125px 1fr 35px;font-size:12px;gap:8px;margin:11px 0}
+.row output{color:var(--cyan);font-variant-numeric:tabular-nums}
+input[type=range]{accent-color:var(--accent);cursor:pointer}
+input[type=checkbox]{accent-color:var(--accent)}
+select,button,input[type=text]{background:#252737;color:#edf0fa;
+border:1px solid #ffffff20;border-radius:9px;padding:8px;font:inherit}
+select{font-size:12px}
+button{font-size:12px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:#353044;border-color:#bda0fc80}
+button:active{border:1px solid #bda0fc;background:#43365b}
+.check{font-size:12px}
+#weights{gap:9px 2px}
+.weight{color:#b4b6cd}
+#playlist li{border-radius:8px;font-size:12px}
+#playlist li.active{background:#b697ee25;color:#eee2ff}
+#playlist button{padding:3px 7px}
+#status{color:var(--cyan);line-height:1.5}
+small{color:#999fb7;font-size:11px}
+footer{border-top:1px solid #ffffff15;padding-top:14px}
+#view{background:linear-gradient(120deg,#7552a9,#465c83);border-color:#c8b8f84d}
+#hint{color:#9b9faf}
+.pd-media{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pd-file{width:100%;font-size:12px;margin:7px 0}
+.pd-note{font-size:11px;color:#9da6bf;line-height:1.5;margin:8px 0}
+.pd-audio{width:100%;height:36px;margin:8px 0}
+@media(max-width:750px){.pd-media{grid-template-columns:1fr}
+#panel{padding:12px;border-radius:16px}header{font-size:17px}}
+</style>
+<script id="prismatic-drift-extension">
+(() => {
+"use strict";
+document.title="Gavenecko’s Prismatic Drift";
+document.querySelector("header span").textContent="Gavenecko’s Prismatic Drift";
+document.querySelector("#panel main small").textContent=
+ "An independent recreation inspired by John Biddiscombe’s Zone Rings from Outer-Space. "+
+ "Not affiliated with or endorsed by the original author.";
+$("hint").textContent="Prismatic Drift · Tab: controls · F: fullscreen · Space: pause";
+
+function addRange(parent,id,label,min,max,start,step=1){
+ const row=document.createElement("label");row.className="row";
+ row.innerHTML=`<span>${label}</span><input id="${id}" type="range"
+ min="${min}" max="${max}" step="${step}" value="${start}"><output>${start}</output>`;
+ parent.append(row);controls.push($(id));
+}
+function addSelect(parent,id,options){
+ const select=document.createElement("select");select.id=id;
+ select.setAttribute("aria-label",id);
+ for(const [value,label] of options){
+ const option=document.createElement("option");
+ option.value=value;option.textContent=label;select.append(option);
+ }
+ parent.append(select);controls.push(select);
+}
+function section(title){
+ const field=document.createElement("fieldset");
+ const legend=document.createElement("legend");legend.textContent=title;
+ field.append(legend);return field;
+}
+function button(parent,text,handler){
+ const b=document.createElement("button");b.textContent=text;
+ b.onclick=handler;parent.append(b);return b;
+}
+
+const shapes=section("Shape studio");
+$("shapeControls").before(shapes);
+addSelect(shapes,"pdFamily",[
+ ["polygon","Polygon rings"],["star","Orbiting stars"],
+ ["flower","Glass petals"],["spiral","Spiral currents"]]);
+addRange(shapes,"pdDepth","Shape depth",10,90,45);
+
+const media=document.createElement("div");media.className="pd-media";
+$("panel").querySelector("footer").before(media);
+const images=section("Image studio"),music=section("Music studio");
+media.append(images,music);
+
+const imageInput=document.createElement("input");
+imageInput.type="file";imageInput.accept="image/*";imageInput.className="pd-file";
+imageInput.setAttribute("aria-label","Load image");images.append(imageInput);
+addSelect(images,"pdImageMode",[
+ ["kaleidoscope","Mirrored kaleidoscope"],["photo","Floating image"]]);
+addRange(images,"pdImageOpacity","Image strength",0,100,35);
+addRange(images,"pdSymmetry","Mirror segments",2,24,8);
+addRange(images,"pdImageZoom","Image zoom",50,250,110);
+addRange(images,"pdImageRotation","Image rotation",-100,100,10);
+const imageButtons=document.createElement("div");imageButtons.className="buttons";
+images.append(imageButtons);
+const imageNote=document.createElement("div");imageNote.className="pd-note";
+imageNote.textContent="Load a local image. It stays on your computer.";
+images.append(imageNote);
+
+const audioInput=document.createElement("input");
+audioInput.type="file";audioInput.accept="audio/*";audioInput.className="pd-file";
+audioInput.setAttribute("aria-label","Load music");music.append(audioInput);
+const audio=document.createElement("audio");
+audio.controls=true;audio.className="pd-audio";music.append(audio);
+addRange(music,"pdSensitivity","Sensitivity",0,200,100);
+addRange(music,"pdBass","Bass expansion",0,100,35);
+addRange(music,"pdTreble","Treble colour",0,100,30);
+const audioNote=document.createElement("div");audioNote.className="pd-note";
+audioNote.textContent="Load a track, then press Play. Music stays on your computer.";
+music.append(audioNote);
+
+let image=null,imageUrl=null,audioUrl=null;
+let audioContext=null,analyser=null,samples=null;
+let bass=0,treble=0,previousAudioTime=performance.now();
+const ringLayer=document.createElement("canvas");
+const layerContext=ringLayer.getContext("2d");
+
+imageInput.onchange=()=>{
+ const file=imageInput.files[0];if(!file)return;
+ const candidateUrl=URL.createObjectURL(file);
+ const candidate=new Image();
+ candidate.onload=()=>{
+ if(imageUrl)URL.revokeObjectURL(imageUrl);
+ image=candidate;imageUrl=candidateUrl;
+ imageNote.textContent=file.name+" · loaded for this session";
+ scheduleSave();
+ };
+ candidate.onerror=()=>{
+ URL.revokeObjectURL(candidateUrl);
+ imageNote.textContent="This image could not be opened. Try PNG or JPEG.";
+ };
+ candidate.src=candidateUrl;
+};
+button(imageButtons,"Use image colours",()=>{
+ if(!image){imageNote.textContent="Load an image first.";return}
+ const sample=document.createElement("canvas");sample.width=64;sample.height=64;
+ const sc=sample.getContext("2d",{willReadFrequently:true});
+ sc.drawImage(image,0,0,64,64);
+ const pixels=sc.getImageData(0,0,64,64).data;
+ const bins=new Map();
+ for(let i=0;i<pixels.length;i+=4){
+ if(pixels[i+3]<128)continue;
+ const r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+ const luminance=(r+g+b)/3;
+ if(luminance<20||luminance>242)continue;
+ const key=(r>>5)+","+(g>>5)+","+(b>>5);
+ const bin=bins.get(key)||{count:0,r:0,g:0,b:0};
+ bin.count++;bin.r+=r;bin.g+=g;bin.b+=b;bins.set(key,bin);
+ }
+ const selected=[...bins.values()].sort((a,b)=>b.count-a.count).slice(0,8);
+ if(!selected.length){
+ imageNote.textContent="The image has too few distinct colours.";return;
+ }
+ rgbPoints=selected.map(p=>[p.r/p.count,p.g/p.count,p.b/p.count]);
+ while(rgbPoints.length<3)rgbPoints.push([...rgbPoints[0]]);
+ $("palette").value="rgb";$("points").value=rgbPoints.length;
+ outputs();scheduleSave();
+ imageNote.textContent="Image colours applied to the rings.";
+});
+button(imageButtons,"Remove image",()=>{
+ image=null;if(imageUrl)URL.revokeObjectURL(imageUrl);
+ imageUrl=null;imageInput.value="";
+ imageNote.textContent="Image removed.";
+});
+
+function prepareAudio(){
+ if(audioContext)return;
+ const AudioEngine=window.AudioContext||window.webkitAudioContext;
+ if(!AudioEngine)throw Error("Audio analysis is unavailable.");
+ audioContext=new AudioEngine();
+ const source=audioContext.createMediaElementSource(audio);
+ analyser=audioContext.createAnalyser();
+ analyser.fftSize=2048;analyser.smoothingTimeConstant=.8;
+ samples=new Uint8Array(analyser.frequencyBinCount);
+ source.connect(analyser);analyser.connect(audioContext.destination);
+}
+audioInput.onchange=()=>{
+ const file=audioInput.files[0];if(!file)return;
+ try{
+ prepareAudio();audio.pause();
+ if(audioUrl)URL.revokeObjectURL(audioUrl);
+ audioUrl=URL.createObjectURL(file);audio.src=audioUrl;audio.load();
+ audioNote.textContent=file.name+" · press Play";
+ }catch(error){audioNote.textContent=error.message}
+};
+audio.addEventListener("play",()=>{
+ if(audioContext)audioContext.resume().catch(error=>{
+ audioNote.textContent=error.message;
+ });
+});
+audio.addEventListener("error",()=>{
+ audioNote.textContent="This track could not be opened. Try MP3 or WAV.";
+});
+
+function updateMusic(){
+ const now=performance.now();
+ const dt=Math.min((now-previousAudioTime)/1000,.1);
+ previousAudioTime=now;
+ if(paused)return;
+ let low=0,high=0;
+ if(analyser&&!audio.paused&&!audio.ended){
+ analyser.getByteFrequencyData(samples);
+ const hz=audioContext.sampleRate/analyser.fftSize;
+ function average(from,to){
+ const a=Math.max(0,Math.floor(from/hz));
+ const b=Math.min(samples.length,Math.ceil(to/hz));
+ let sum=0;for(let i=a;i<b;i++)sum+=samples[i];
+ return b>a?sum/(b-a)/255:0;
+ }
+ low=average(30,250)*value("pdSensitivity")/100;
+ high=average(2000,8000)*value("pdSensitivity")/100;
+ }
+ const ease=1-Math.exp(-dt*7);
+ bass+=(low-bass)*ease;treble+=(high-treble)*ease;
+window.pdAudioLevels={bass,treble};
+}
+
+const baseColour=colour;
+window.colour=index=>baseColour(index+treble*value("pdTreble")*5);
+
+const baseDrawRing=drawRing;
+window.drawRing=(context,r)=>{
+ context.save();
+ const pulse=1+bass*value("pdBass")*.006;
+ context.translate(W/2,H/2);context.scale(pulse,pulse);
+ context.translate(-W/2,-H/2);
+ if($("pdFamily").value==="polygon"){
+ baseDrawRing(context,r);context.restore();return;
+ }
+ const progress=checked("inward")?1-r.age:r.age;
+ const extent=Math.hypot(W,H)*.65*value("zoom")/100;
+ const radius=3+Math.pow(Math.max(0,progress),1+value("perspective")*.018)*extent;
+ const phase=checked("sync")?0:r.index*.04;
+ const ax=value("ax")*.009,ay=checked("lock")?ax:value("ay")*.009;
+ const fx=value("fx")*.045,fy=checked("lock")?fx:value("fy")*.045;
+ const sx=1+ax*Math.sin(t*fx+phase),sy=1+ay*Math.sin(t*fy+phase+1.4);
+ const blend=Math.pow(Math.max(0,1-progress),1+value("vanish")*.025);
+ const x=W/2+r.x*blend,y=H/2+r.y*blend;
+ let angle=r.angle;
+ if($("rotation").value==="sine")
+ angle+=Math.sin(t*value("rf")*.035+r.index*.015)*value("ra")*.04;
+ if($("rotation").value==="random")angle+=t*r.spin*value("ra")*.025;
+ if($("rotation").value!=="none")angle+=t*value("precession")*.008;
+ const family=$("pdFamily").value,n=Math.max(3,r.sides);
+ const depth=value("pdDepth")/100;
+ const count=family==="star"?n*2:n*10;
+ const dots=$("draw").value==="dots";
+ context.strokeStyle=context.fillStyle=colour(r.index);
+ context.lineWidth=value("lineWidth");
+ if(!dots)context.beginPath();
+ for(let k=0;k<(family==="star"?count:count+1);k++){
+ const u=k/count;
+ let a=angle+u*TAU,rad=radius;
+ if(family==="star")rad*=k%2?depth:1;
+ if(family==="flower")rad*=1-depth*.5+Math.cos(u*TAU*n)*depth*.5;
+ if(family==="spiral"){a=angle+u*TAU*(1+depth*4);rad*=u}
+ const px=x+Math.cos(a)*rad*sx,py=y+Math.sin(a)*rad*sy;
+ if(dots){
+ context.beginPath();context.arc(px,py,value("dotSize")/2,0,TAU);context.fill();
+ }else if(k===0)context.moveTo(px,py);
+ else context.lineTo(px,py);
+ }
+ if(!dots){
+ if(family!=="spiral")context.closePath();
+ context.stroke();
+ }
+ context.restore();
+};
+
+function drawImageLayer(){
+ if(!image||value("pdImageOpacity")===0)return;
+ ctx.save();ctx.globalAlpha=value("pdImageOpacity")/100;
+ ctx.translate(W/2,H/2);
+ const zoom=value("pdImageZoom")/100*(1+bass*.08);
+ const rotation=t*value("pdImageRotation")*.004;
+ const size=Math.max(W/image.width,H/image.height)*zoom*1.5;
+ if($("pdImageMode").value==="photo"){
+ ctx.rotate(rotation);
+ ctx.drawImage(image,-image.width*size/2,-image.height*size/2,
+ image.width*size,image.height*size);
+ }else{
+ const segments=value("pdSymmetry"),arc=TAU/segments;
+ const radius=Math.hypot(W,H);
+ for(let k=0;k<segments;k++){
+ ctx.save();ctx.rotate(k*arc);
+ ctx.beginPath();ctx.moveTo(0,0);
+ ctx.arc(0,0,radius,0,arc);ctx.closePath();ctx.clip();
+ ctx.rotate(arc/2);
+ if(k%2)ctx.scale(1,-1);
+ ctx.rotate(rotation);
+ ctx.drawImage(image,-image.width*size/2,-image.height*size/2,
+ image.width*size,image.height*size);
+ ctx.restore();
+ }
+ }
+ ctx.restore();
+}
+
+const baseRender=render;
+window.render=()=>{
+ updateMusic();baseRender();
+ if(!image||value("pdImageOpacity")===0)return;
+ if(ringLayer.width!==W||ringLayer.height!==H){
+ ringLayer.width=W;ringLayer.height=H;
+ }
+ layerContext.clearRect(0,0,W,H);
+ layerContext.drawImage(canvas,0,0);
+ ctx.save();ctx.globalAlpha=1;ctx.globalCompositeOperation="source-over";
+ ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);
+ drawImageLayer();
+ ctx.globalCompositeOperation="screen";
+ ctx.drawImage(ringLayer,0,0);ctx.restore();
+};
+
+try{
+ const saved=localStorage.getItem(STORAGE);
+ if(saved)restore(JSON.parse(saved));
+}catch{}
+
+const newPresets=[
+ ["pd-orbiting-stars","Orbiting Stars","star",12,"rainbow"],
+ ["pd-glass-petals","Glass Petals","flower",8,"ice"],
+ ["pd-spiral-current","Spiral Current","spiral",6,"rgb"]
+];
+for(const [id,name,family,sides,palette] of newPresets){
+ if(library.some(p=>p.id===id))continue;
+ const data=visualSettings();
+ Object.assign(data.controls,{
+ pdFamily:family,pdDepth:"45",count:"120",motion:"parametric",
+ rotation:"sine",palette,erase:true,trail:"1.5",
+ ax:"15",ay:"20",ra:"35",pdImageOpacity:"35"
+ });
+ data.weights=Array.from({length:24},(_,i)=>i+1===sides?100:0);
+ library.push({id,name,data});
+}
+renderLibrary();outputs();scheduleSave();
+
+// Prismatic Drift About and terminology
+document.querySelector("#ringControls legend").textContent="Shape field";
+$("count").closest("label").querySelector("span").textContent="Max. shapes";
+$("weights").closest("fieldset").querySelector("legend").textContent=
+ "Shape probability - 1 to 24 sides";
+document.querySelector("#panel main small").textContent=
+ "Prismatic Drift by Gavenecko. See About for credits and inspiration.";
+
+const aboutStyle=document.createElement("style");
+aboutStyle.textContent=`
+#panel header span{flex:1}
+#pdAboutButton{width:auto;height:auto;border-radius:9px;
+margin-right:12px;padding:7px 14px;font-size:12px}
+#pdAboutDialog{color:#edf0fa;background:#181c2bf5;
+border:1px solid #ffffff28;border-radius:20px;
+padding:28px;width:min(540px,90vw);max-height:85vh;overflow:auto;
+box-shadow:0 24px 90px #000b;backdrop-filter:blur(20px)}
+#pdAboutDialog::backdrop{background:#050710aa;backdrop-filter:blur(6px)}
+#pdAboutDialog h2{margin:0 0 8px;color:#e1d0ff;font-size:23px}
+#pdAboutDialog h3{color:#aeeaf1;font-size:14px;margin-top:22px}
+#pdAboutDialog p{font-size:14px;line-height:1.65;color:#c0c6dc}
+#pdAboutDialog .pd-byline{color:#aeeaf1;margin-top:0}
+#pdAboutDialog button{padding:8px 20px}
+`;
+document.head.append(aboutStyle);
+
+const aboutDialog=document.createElement("dialog");
+aboutDialog.id="pdAboutDialog";
+aboutDialog.setAttribute("aria-labelledby","pdAboutTitle");
+aboutDialog.innerHTML=`
+<h2 id="pdAboutTitle">Prismatic Drift</h2>
+<p class="pd-byline">by Gavenecko</p>
+<p>A visual playground for flowing geometry, colour, images,
+and music. Create your own scenes, explore new shapes,
+and arrange a continuous sequence of animations.</p>
+<h3>Original inspiration</h3>
+<p>Inspired by <strong>Zone Rings from Outer-Space</strong>,
+created by <strong>John Biddiscombe</strong>.</p>
+<p>The original program inspired this independent implementation.
+Prismatic Drift uses newly written animation and application code,
+with additional shapes, image effects, music response,
+and scene controls.</p>
+<p>This project is not affiliated with or endorsed by
+John Biddiscombe. Credit acknowledges the original inspiration;
+it does not claim ownership of the original software.</p>
+<form method="dialog"><button>Close</button></form>
+`;
+document.body.append(aboutDialog);
+
+const aboutButton=document.createElement("button");
+aboutButton.id="pdAboutButton";
+aboutButton.textContent="About";
+aboutButton.onclick=()=>aboutDialog.showModal();
+document.querySelector("header").insertBefore(aboutButton,$("close"));
+
+// Prismatic Drift manual playlist start
+playing=false;
+
+const playlistButtonStyle=document.createElement("style");
+playlistButtonStyle.textContent=`
+#pdPlaylistToggle{width:auto;height:auto;border-radius:9px;
+margin-right:10px;padding:7px 14px;font-size:12px;
+background:#493665;border-color:#c3a5ff55;white-space:nowrap}
+#panel header{position:sticky;top:-16px;z-index:5;
+background:#181c2bf2;backdrop-filter:blur(14px)}
+`;
+document.head.append(playlistButtonStyle);
+
+const playlistToggle=document.createElement("button");
+playlistToggle.id="pdPlaylistToggle";
+playlistToggle.textContent="Start playlist";
+playlistToggle.onclick=()=>$("play").click();
+
+document.querySelector("header").insertBefore(
+ playlistToggle,$("pdAboutButton")||$("close"));
+
+const originalPlaylistStatus=updateStatus;
+window.updateStatus=()=>{
+ originalPlaylistStatus();
+ const label=playing?"Stop playlist":"Start playlist";
+ $("play").textContent=label;
+ playlistToggle.textContent=label;
+ playlistToggle.disabled=playlist.length===0;
+ playlistToggle.setAttribute("aria-pressed",String(playing));
+};
+
+const originalPlaylistRender=renderPlaylist;
+window.renderPlaylist=()=>{
+ originalPlaylistRender();
+
+ const entries=$("playlist").querySelectorAll("li");
+ entries.forEach((entry,i)=>{
+ const selectButton=entry.querySelector('button[title="Play from here"]');
+ if(!selectButton)return;
+
+ selectButton.textContent="Select";
+ selectButton.title="Select this preset without starting playback";
+ selectButton.onclick=()=>{
+ playing=false;
+ playlistIndex=i;
+ playlistElapsed=0;
+ applyPreset(playlist[i]);
+ renderPlaylist();
+ scheduleSave();
+ };
+ });
+ updateStatus();
+};
+
+$("next").onclick=()=>{
+ playing=false;
+ advance();
+ updateStatus();
+ scheduleSave();
+};
+
+// Changing an animation control gives editing priority over playback.
+$("panel").addEventListener("input",event=>{
+ const target=event.target;
+ const animationControl=controls.includes(target)||weights.includes(target);
+ if(playing&&animationControl){
+ playing=false;
+ updateStatus();
+ scheduleSave();
+ }
+});
+
+renderPlaylist();
+updateStatus();
+scheduleSave();
+
+// Prismatic Drift creative tools
+const drStyle=document.createElement("style");
+drStyle.textContent=`
+.dr-advanced{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.dr-advanced fieldset{margin-bottom:0}
+#pdUndo,#pdRedo{width:auto;height:auto;border-radius:9px;
+padding:7px 11px;margin-right:6px;font-size:12px}
+button:disabled{opacity:.4;cursor:default}
+.dr-reset{font-size:10px;padding:2px 7px;margin-left:8px;
+border-radius:6px;color:#adb4cd;background:#ffffff08}
+#panel header{flex-wrap:wrap;gap:5px}
+@media(max-width:850px){.dr-advanced{grid-template-columns:1fr}}
+`;
+document.head.append(drStyle);
+
+const drAdvanced=document.createElement("div");
+drAdvanced.className="dr-advanced";
+drAdvanced.style.marginBottom="14px";
+$("panel").querySelector("footer").before(drAdvanced);
+
+function drCheck(parent,id,label,start=false){
+ const row=document.createElement("label");row.className="check";
+ row.innerHTML=`<input id="${id}" type="checkbox" ${start?"checked":""}> ${label}`;
+ parent.append(row);controls.push($(id));
+}
+function drNote(parent,text){
+ const note=document.createElement("small");
+ note.textContent=text;parent.append(note);
+}
+function drSetDefault(id,v){
+ const e=$(id);
+ for(const option of e.options){
+ option.defaultSelected=option.value===v;
+ option.selected=option.value===v;
+ }
+}
+
+const drMorph=section("Shape morphing");
+drAdvanced.append(drMorph);
+addSelect(drMorph,"pdMorphTarget",[
+ ["star","Morph toward stars"],["flower","Morph toward flowers"],
+ ["spiral","Morph toward spirals"],["polygon","Morph toward polygons"],
+ ["none","Morph off"]]);
+addRange(drMorph,"pdMorphMix","Morph mix",0,100,0);
+drCheck(drMorph,"pdMorphAuto","Automatic morph loop");
+addRange(drMorph,"pdMorphSeconds","Loop duration (s)",2,60,12);
+drNote(drMorph,"Choose a target and adjust Morph mix, or enable the automatic loop.");
+
+const drFeedback=section("Feedback effects");
+drAdvanced.append(drFeedback);
+drCheck(drFeedback,"pdFeedback","Enable feedback");
+addRange(drFeedback,"pdEchoLife","Echo fade (s)",.2,12,3,.1);
+addRange(drFeedback,"pdEchoRotate","Rotation (deg/s)",-60,60,8);
+addRange(drFeedback,"pdEchoZoom","Zoom (%/s)",-20,20,-3);
+addRange(drFeedback,"pdEchoX","Horizontal drift",-100,100,0);
+addRange(drFeedback,"pdEchoY","Vertical drift",-100,100,0);
+drNote(drFeedback,"Feedback transforms the previous image. It is separate from ordinary trail duration.");
+
+for(let i=1;i<=3;i++){
+ const field=section(i===1?"Layer 1 - main shapes":`Layer ${i}`);
+ drAdvanced.append(field);
+ drCheck(field,`pdL${i}Enabled`,"Enable layer",i===1);
+ addSelect(field,`pdL${i}Family`,[
+ ["inherit","Use main shape"],["polygon","Polygons"],
+ ["star","Stars"],["flower","Flowers"],["spiral","Spirals"]]);
+ if(i>1){
+ drSetDefault(`pdL${i}Family`,i===2?"flower":"star");
+ addRange(field,`pdL${i}Count`,"Shape count",10,600,i===2?100:80);
+ addRange(field,`pdL${i}Sides`,"Sides / petals",3,24,i===2?8:5);
+ addRange(field,`pdL${i}Speed`,"Expansion speed",10,200,i===2?65:120);
+ }else{
+ drNote(field,"Shape count and expansion speed use the main controls above.");
+ }
+ addRange(field,`pdL${i}Opacity`,"Opacity",0,100,i===1?100:65);
+ addRange(field,`pdL${i}Scale`,"Size",20,200,i===1?100:80);
+ addRange(field,`pdL${i}Hue`,"Colour shift",0,360,i===1?0:i===2?100:220);
+ addRange(field,`pdL${i}Spin`,"Layer rotation",-100,100,i===1?0:i===2?-15:20);
+ addRange(field,`pdL${i}Orbit`,"Orbit movement",0,100,i===1?0:20);
+ addRange(field,`pdL${i}X`,"Horizontal offset",-100,100,0);
+ addRange(field,`pdL${i}Y`,"Vertical offset",-100,100,0);
+}
+
+// Named palettes retain their identity unless colour shifts are explicitly enabled.
+drCheck($("colourControls"),"pdNamedPaletteShift","Allow layer colour shifts on named palettes",false);
+drNote($("colourControls"),"Fire, Ice and Green phosphor keep their original colours by default.");
+const drNamedPalette=()=>["fire","ice","mono"].includes($("palette").value);
+const drPaletteOutputs=outputs;
+window.outputs=()=>{
+ drPaletteOutputs();
+ const locked=drNamedPalette()&&!checked("pdNamedPaletteShift");
+ for(let i=1;i<=3;i++){
+  const slider=$(`pdL${i}Hue`);
+  slider.disabled=locked;
+  slider.title=locked?"Enable colour shifts on named palettes in Colour control to use this setting.":"";
+ }
+};
+// Keep factory values separate from the user's saved settings.
+const drDefaults=new Map(controls.map(e=>[
+ e.id,e.type==="checkbox"?e.defaultChecked:
+ e.tagName==="SELECT"?
+ ([...e.options].find(o=>o.defaultSelected)||e.options[0]).value:
+ e.defaultValue
+]));
+const drWeightDefaults=weights.map(e=>e.defaultValue);
+
+// Independent populations for the two additional layers.
+const drPools=[[],[],[]];
+const drBorn=[0,0,0];
+let drHue=0;
+
+const drOldOrigin=updateOrigin;
+window.updateOrigin=dt=>{
+ drOldOrigin(dt);
+ for(let i=2;i<=3;i++){
+ const poolIndex=i-1;
+ if(!checked(`pdL${i}Enabled`)){
+ drPools[poolIndex]=[];drBorn[poolIndex]=0;continue;
+ }
+ const count=value(`pdL${i}Count`);
+ const life=12/(value("speed")/55)/(value(`pdL${i}Speed`)/100);
+ const pool=drPools[poolIndex];
+ for(const r of pool)r.age+=dt/life;
+ drPools[poolIndex]=pool.filter(r=>r.age<1);
+ drBorn[poolIndex]+=dt*count/life;
+ while(drBorn[poolIndex]>=1){
+ drBorn[poolIndex]--;
+ drPools[poolIndex].push({
+ age:0,index:serial++,sides:value(`pdL${i}Sides`),
+ x:origin.x,y:origin.y,angle:t*.13+i*.5,
+ spin:Math.random()*2-1
+ });
+ }
+ if(drPools[poolIndex].length>count)
+ drPools[poolIndex].splice(0,drPools[poolIndex].length-count);
+ }
+};
+
+const drOldColour=colour;
+window.colour=index=>{
+ const text=drOldColour(index);
+ if(drHue===0||(drNamedPalette()&&!checked("pdNamedPaletteShift")))return text;
+ const hsl=text.match(/^hsl\(([-\d.]+),([^,]+),([^)]+)\)$/);
+ if(hsl)return `hsl(${Number(hsl[1])+drHue},${hsl[2]},${hsl[3]})`;
+ const numbers=text.match(/[\d.]+/g);
+ if(!numbers||numbers.length<3)return text;
+ const [r,g,b]=numbers.slice(0,3).map(v=>Number(v)/255);
+ const max=Math.max(r,g,b),min=Math.min(r,g,b);
+ const delta=max-min,l=(max+min)/2;
+ let h=0,s=0;
+ if(delta){
+ s=delta/(1-Math.abs(2*l-1));
+ h=max===r?(g-b)/delta:max===g?(b-r)/delta+2:(r-g)/delta+4;
+ }
+ return `hsl(${h*60+drHue},${s*100}%,${l*100}%)`;
+};
+
+function drShapePoint(family,u,n,depth){
+ if(family==="spiral"){
+ const a=u*TAU*(1+depth*4);
+ return [Math.cos(a)*u,Math.sin(a)*u];
+ }
+ if(family==="flower"){
+ const a=u*TAU;
+ const radius=1-depth*.5+Math.cos(a*n)*depth*.5;
+ return [Math.cos(a)*radius,Math.sin(a)*radius];
+ }
+ const vertices=family==="star"?n*2:n;
+ const position=u*vertices,k=Math.floor(position),fraction=position-k;
+ const a=(k%vertices)*TAU/vertices,b=((k+1)%vertices)*TAU/vertices;
+ const ra=family==="star"&&k%2?depth:1;
+ const rb=family==="star"&&(k+1)%2?depth:1;
+ return [
+ Math.cos(a)*ra*(1-fraction)+Math.cos(b)*rb*fraction,
+ Math.sin(a)*ra*(1-fraction)+Math.sin(b)*rb*fraction
+ ];
+}
+
+const drOldDraw=drawRing;
+window.drawRing=(context,r)=>{
+ const source=$("pdFamily").value,target=$("pdMorphTarget").value;
+ let mix=value("pdMorphMix")/100;
+ if(checked("pdMorphAuto"))
+ mix=.5-.5*Math.cos(t*TAU/value("pdMorphSeconds"));
+ if(target==="none"||mix===0||source===target||r.sides<3){
+ drOldDraw(context,r);return;
+ }
+
+ context.save();
+ const pulse=1+(window.pdAudioLevels?.bass||0)*value("pdBass")*.006;
+ context.translate(W/2,H/2);context.scale(pulse,pulse);
+ context.translate(-W/2,-H/2);
+
+ const progress=checked("inward")?1-r.age:r.age;
+ const extent=Math.hypot(W,H)*.65*value("zoom")/100;
+ const radius=3+Math.pow(Math.max(0,progress),1+value("perspective")*.018)*extent;
+ const phase=checked("sync")?0:r.index*.04;
+ const ax=value("ax")*.009,ay=checked("lock")?ax:value("ay")*.009;
+ const fx=value("fx")*.045,fy=checked("lock")?fx:value("fy")*.045;
+ const sx=1+ax*Math.sin(t*fx+phase),sy=1+ay*Math.sin(t*fy+phase+1.4);
+ const blend=Math.pow(Math.max(0,1-progress),1+value("vanish")*.025);
+ const x=W/2+r.x*blend,y=H/2+r.y*blend;
+ let angle=r.angle;
+ if($("rotation").value==="sine")
+ angle+=Math.sin(t*value("rf")*.035+r.index*.015)*value("ra")*.04;
+ if($("rotation").value==="random")angle+=t*r.spin*value("ra")*.025;
+ if($("rotation").value!=="none")angle+=t*value("precession")*.008;
+
+ const n=Math.max(3,r.sides),depth=value("pdDepth")/100;
+ const samples=Math.max(48,n*8),dots=$("draw").value==="dots";
+ context.strokeStyle=context.fillStyle=colour(r.index);
+ context.lineWidth=value("lineWidth");
+ if(!dots)context.beginPath();
+ const cos=Math.cos(angle),sin=Math.sin(angle);
+ for(let k=0;k<=samples;k++){
+ const u=k/samples;
+ const a=drShapePoint(source,u,n,depth),b=drShapePoint(target,u,n,depth);
+ const px=(a[0]*(1-mix)+b[0]*mix)*radius;
+ const py=(a[1]*(1-mix)+b[1]*mix)*radius;
+ const vx=x+(px*cos-py*sin)*sx,vy=y+(px*sin+py*cos)*sy;
+ if(dots){
+ context.beginPath();context.arc(vx,vy,value("dotSize")/2,0,TAU);
+ context.fill();
+ }else if(k===0)context.moveTo(vx,vy);
+ else context.lineTo(vx,vy);
+ }
+ if(!dots){
+ if(source!=="spiral"&&target!=="spiral")context.closePath();
+ context.stroke();
+ }
+ context.restore();
+};
+
+window.paintAll=context=>{
+ const mainFamily=$("pdFamily").value;
+ try{
+ for(let i=1;i<=3;i++){
+ if(!checked(`pdL${i}Enabled`))continue;
+ const family=$(`pdL${i}Family`).value;
+ $("pdFamily").value=family==="inherit"?mainFamily:family;
+ drHue=value(`pdL${i}Hue`);
+ const scale=value(`pdL${i}Scale`)/100;
+ const orbit=Math.min(W,H)*value(`pdL${i}Orbit`)*.003;
+ const x=W/2+W*value(`pdL${i}X`)/200+Math.sin(t*.4+i)*orbit;
+ const y=H/2+H*value(`pdL${i}Y`)/200+Math.cos(t*.31+i)*orbit;
+ context.save();
+ try{
+ context.globalAlpha*=value(`pdL${i}Opacity`)/100;
+ context.translate(x,y);
+ context.rotate(t*value(`pdL${i}Spin`)*.005);
+ context.scale(scale,scale);
+ context.translate(-W/2,-H/2);
+ const population=i===1?rings:drPools[i-1];
+ for(const r of population)drawRing(context,r);
+ }finally{context.restore()}
+ }
+ }finally{
+ $("pdFamily").value=mainFamily;drHue=0;
+ }
+};
+
+// Feedback uses a separate image buffer and brightness-preserving blending.
+const drEchoCanvas=document.createElement("canvas");
+const drWorkCanvas=document.createElement("canvas");
+const drCurrentCanvas=document.createElement("canvas");
+const drEchoContext=drEchoCanvas.getContext("2d");
+const drWorkContext=drWorkCanvas.getContext("2d");
+const drCurrentContext=drCurrentCanvas.getContext("2d");
+let drEchoReady=false,drEchoLast=performance.now();
+
+const drOldRender=render;
+window.render=()=>{
+ const now=performance.now();
+ const dt=paused?0:Math.min((now-drEchoLast)/1000,.05);
+ drEchoLast=now;
+ drOldRender();
+ if(!checked("pdFeedback")){drEchoReady=false;return}
+ if(drEchoCanvas.width!==W||drEchoCanvas.height!==H){
+ for(const surface of [drEchoCanvas,drWorkCanvas,drCurrentCanvas]){
+ surface.width=W;surface.height=H;
+ }
+ drEchoReady=false;
+ }
+ if(paused&&$("pauseMode").value==="freeze"&&drEchoReady){
+ ctx.drawImage(drEchoCanvas,0,0);return;
+ }
+ drCurrentContext.clearRect(0,0,W,H);
+ drCurrentContext.drawImage(canvas,0,0);
+ drWorkContext.globalCompositeOperation="source-over";
+ drWorkContext.globalAlpha=1;
+ drWorkContext.fillStyle="#000";drWorkContext.fillRect(0,0,W,H);
+ if(drEchoReady){
+ drWorkContext.save();
+ drWorkContext.globalAlpha=Math.pow(2,-dt/value("pdEchoLife"));
+ drWorkContext.translate(W/2+value("pdEchoX")*dt,H/2+value("pdEchoY")*dt);
+ drWorkContext.rotate(value("pdEchoRotate")*Math.PI/180*dt);
+ const zoom=Math.exp(value("pdEchoZoom")*.01*dt);
+ drWorkContext.scale(zoom,zoom);
+ drWorkContext.translate(-W/2,-H/2);
+ drWorkContext.drawImage(drEchoCanvas,0,0);
+ drWorkContext.restore();
+ }
+ drWorkContext.globalCompositeOperation="lighten";
+ drWorkContext.drawImage(drCurrentCanvas,0,0);
+ drWorkContext.globalCompositeOperation="source-over";
+ drEchoContext.drawImage(drWorkCanvas,0,0);
+ ctx.drawImage(drWorkCanvas,0,0);
+ drEchoReady=true;
+};
+
+const drOldClear=clear;
+window.clear=()=>{
+ drOldClear();drEchoReady=false;
+ for(let i=0;i<3;i++){drPools[i]=[];drBorn[i]=0}
+};
+$("clear").onclick=()=>clear();
+
+// Undo/Redo stores visual settings, including the new controls.
+let drHistory=[],drHistoryIndex=-1,drHistoryReady=false;
+let drHistoryBusy=false,drHistoryTimer=0;
+
+const drUndoButton=document.createElement("button");
+drUndoButton.id="pdUndo";drUndoButton.textContent="Undo";
+drUndoButton.title="Undo settings (Ctrl+Z)";
+const drRedoButton=document.createElement("button");
+drRedoButton.id="pdRedo";drRedoButton.textContent="Redo";
+drRedoButton.title="Redo settings (Ctrl+Y)";
+const drHeader=document.querySelector("header");
+drHeader.insertBefore(drUndoButton,$("pdAboutButton")||$("close"));
+drHeader.insertBefore(drRedoButton,$("pdAboutButton")||$("close"));
+
+function drHistoryButtons(){
+ drUndoButton.disabled=drHistoryIndex<=0;
+ drRedoButton.disabled=drHistoryIndex>=drHistory.length-1;
+}
+function drCommitHistory(){
+ if(!drHistoryReady||drHistoryBusy||playing)return;
+ const current=JSON.stringify(visualSettings());
+ if(current===drHistory[drHistoryIndex])return;
+ drHistory.splice(drHistoryIndex+1);
+ drHistory.push(current);
+ if(drHistory.length>60)drHistory.shift();
+ drHistoryIndex=drHistory.length-1;drHistoryButtons();
+}
+function drTravelHistory(direction){
+ playing=false;clearTimeout(drHistoryTimer);drCommitHistory();
+ const next=drHistoryIndex+direction;
+ if(next<0||next>=drHistory.length)return;
+ drHistoryBusy=true;
+ try{
+ snapshot();drHistoryIndex=next;
+ applyVisual(JSON.parse(drHistory[next]));
+ updateStatus();scheduleSave();
+ }finally{
+ drHistoryBusy=false;drHistoryButtons();
+ }
+}
+drUndoButton.onclick=()=>drTravelHistory(-1);
+drRedoButton.onclick=()=>drTravelHistory(1);
+
+const drOldSave=scheduleSave;
+window.scheduleSave=()=>{
+ drOldSave();
+ if(!drHistoryReady||drHistoryBusy)return;
+ clearTimeout(drHistoryTimer);
+ drHistoryTimer=setTimeout(drCommitHistory,300);
+};
+
+document.addEventListener("keydown",event=>{
+ if(!(event.ctrlKey||event.metaKey))return;
+ if(event.target instanceof Element&&
+ (event.target.matches("textarea,input[type=text],input[type=search]")||
+ event.target.isContentEditable))return;
+ const key=event.key.toLowerCase();
+ if(key==="z"){
+ event.preventDefault();event.stopImmediatePropagation();
+ drTravelHistory(event.shiftKey?1:-1);
+ }else if(key==="y"){
+ event.preventDefault();event.stopImmediatePropagation();drTravelHistory(1);
+ }
+},true);
+
+// Reset only the controls belonging to that section.
+document.querySelectorAll("#panel fieldset").forEach(field=>{
+ const sectionControls=[...field.querySelectorAll("input[id],select[id]")]
+ .filter(e=>drDefaults.has(e.id));
+ const sectionWeights=[...field.querySelectorAll("#weights input")];
+ if(!sectionControls.length&&!sectionWeights.length)return;
+ const legend=field.querySelector("legend");
+ if(!legend)return;
+ const reset=document.createElement("button");
+ reset.className="dr-reset";reset.type="button";reset.textContent="Reset";
+ reset.setAttribute("aria-label","Reset "+legend.textContent);
+ reset.onclick=()=>{
+ playing=false;clearTimeout(drHistoryTimer);drCommitHistory();
+ for(const e of sectionControls){
+ const v=drDefaults.get(e.id);
+ if(e.type==="checkbox")e.checked=v;
+ else e.value=v;
+ }
+ if(sectionWeights.length)
+ weights.forEach((e,i)=>e.value=drWeightDefaults[i]);
+ if(field.id==="colourControls")newPalette();
+ nextShape=0;outputs();updateStatus();drCommitHistory();scheduleSave();
+ };
+ legend.append(reset);
+});
+
+// Restore new controls that were not present during the earlier startup pass.
+try{
+ const saved=localStorage.getItem(STORAGE);
+ if(saved)restore(JSON.parse(saved));
+}catch{}
+playing=false;
+
+const drPresetSpecs=[
+ ["pd-layered-garden","Layered Garden",{
+ pdFamily:"flower",pdMorphMix:"0",pdMorphAuto:false,
+ pdL1Enabled:true,pdL2Enabled:true,pdL3Enabled:false,
+ pdL2Family:"star",pdL2Count:"80",pdL2Sides:"5",
+ pdL2Opacity:"55",pdL2Scale:"65",pdL2Hue:"150",
+ pdL2Spin:"-15",pdL2Orbit:"20",
+ pdFeedback:false,trail:"1",count:"100",palette:"ice"
+ },8],
+ ["pd-echo-current","Echo Current",{
+ pdFamily:"polygon",pdMorphMix:"0",pdMorphAuto:false,
+ pdL1Enabled:true,pdL2Enabled:false,pdL3Enabled:false,
+ pdFeedback:true,pdEchoLife:"2",pdEchoRotate:"10",
+ pdEchoZoom:"-5",pdEchoX:"8",pdEchoY:"0",
+ trail:"0",count:"90",palette:"rainbow"
+ },6],
+ ["pd-morph-orbit","Morph Orbit",{
+ pdFamily:"polygon",pdMorphTarget:"flower",pdMorphAuto:true,
+ pdMorphSeconds:"16",pdL1Enabled:true,
+ pdL2Enabled:false,pdL3Enabled:false,pdFeedback:false,
+ trail:"1",count:"120",palette:"rgb"
+ },8]
+];
+for(const [id,name,changes,sides] of drPresetSpecs){
+ if(library.some(p=>p.id===id))continue;
+ const data=visualSettings();
+ Object.assign(data.controls,changes);
+ data.weights=Array.from({length:24},(_,i)=>i+1===sides?100:0);
+ library.push({id,name,data});
+}
+renderLibrary();outputs();updateStatus();
+drHistoryReady=true;drCommitHistory();scheduleSave();
+
+addEventListener("pagehide",()=>{
+ if(imageUrl)URL.revokeObjectURL(imageUrl);
+ if(audioUrl)URL.revokeObjectURL(audioUrl);
+});
+})();
+</script><script id="prismatic-drift-mobile">
+(() => {
+'use strict';
+const panel=$('panel');
+document.title="Gavenecko's Prismatic Drift — Mobile Preview";
+document.querySelector('header span').textContent='Prismatic Drift · Mobile';
+const style=document.createElement('style');
+style.textContent=`
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+#screen{touch-action:none;-webkit-user-select:none;user-select:none}
+#hint{display:none}#panel{position:fixed;inset:8px 8px calc(82px + env(safe-area-inset-bottom));transform:none;width:auto;max-width:650px;max-height:none;margin:0 auto;padding:12px;overflow:auto;overscroll-behavior:contain;border-radius:20px;background:linear-gradient(145deg,#192033f7,#101420f7)}
+#panel header{position:sticky;top:-12px;z-index:4;background:#171d2df5;padding:14px 4px;font-size:16px;gap:7px;backdrop-filter:blur(16px)}
+header span:before{font-size:20px;margin-right:7px}#panel header span{flex:1 1 100%}
+#panel header button{min-height:40px;min-width:44px;border-radius:10px;width:auto}#panel main,.pd-media,.dr-advanced{grid-template-columns:1fr!important;gap:8px}
+button,select,input[type=file]{min-height:44px;font-size:14px}input[type=checkbox]{width:21px;height:21px;vertical-align:middle}
+.row{grid-template-columns:minmax(105px,1fr) minmax(85px,1.2fr) 35px;font-size:13px;gap:8px;min-height:44px;margin:8px 0}.row input[type=range]{min-height:40px;margin:0;touch-action:pan-y}.check{font-size:13px;min-height:36px}small,.pd-note{font-size:12px;line-height:1.6}
+legend{font-size:14px}fieldset{padding:11px}#weights{grid-template-columns:repeat(8,1fr);gap:10px 2px}.weight input{height:90px;width:30px;touch-action:none}#playlist button{min-width:40px;min-height:40px}#playlist li{flex-wrap:wrap}#pdMobileDock{position:fixed;z-index:20;bottom:0;left:0;right:0;display:flex;justify-content:center;gap:5px;padding:10px 8px calc(10px + env(safe-area-inset-bottom));background:#0e1425ed;border-top:1px solid #b8a7ff29;backdrop-filter:blur(20px)}
+#pdMobileDock button{flex:1;max-width:100px;min-width:0;padding:8px 3px;font-size:12px;border-radius:13px;color:#eee9fc;background:#26293c;min-height:46px}#pdMobileDock button:first-child{background:#674e9a}#pdMobileHelp{position:fixed;z-index:21;top:calc(12px + env(safe-area-inset-top));left:14px;right:14px;max-width:450px;margin:auto;padding:17px 18px;background:#141b2df0;border:1px solid #b8a7ff40;border-radius:17px;box-shadow:0 12px 60px #0008;color:#dce7f5;line-height:1.65;font-size:14px}#pdMobileHelp button{margin-top:10px;width:100%}.pd-fold{background:transparent;border:0;padding:4px;color:#d9cbfa;font-weight:600;min-height:36px;font-size:14px;text-align:left}.pd-collapsed>:not(legend){display:none!important}.pd-collapsed{padding-bottom:0}#pdMobileNote{color:#a9b6ce}footer button{flex:1 1 42%}#pdAboutDialog{max-width:calc(100vw - 24px);max-height:80dvh;overflow:auto}#pdAboutDialog h2{font-size:21px}
+@media(min-width:800px){#panel{max-width:760px}#pdMobileHelp{left:auto;right:20px}}
+`;
+document.head.append(style);
+
+const touchField=document.createElement('fieldset');
+touchField.id='pdTouchControls';touchField.innerHTML=`<legend>Touch and performance</legend>
+<small>Mobile Preview 0.2.0-test1. Drag to influence shapes; pinch to zoom; twist with two fingers.</small>
+<label>Touch effect<select id="pdTouchMode"><option value="attract">Attract</option><option value="repel">Repel</option><option value="off">Off</option></select></label>
+<label class="row"><span>Touch strength</span><input id="pdTouchStrength" type="range" min="0" max="100" value="75"><output>75</output></label>
+<label class="check"><input id="pdTapBursts" type="checkbox" checked> Tap to release a burst</label>
+<label>Performance<select id="pdMobileQuality"><option value="battery">Battery saver · 24 fps</option><option value="balanced" selected>Balanced · 30 fps</option><option value="smooth">Smooth · 60 fps</option></select></label>
+<button id="pdResetGesture">Reset zoom and rotation</button>
+<small id="pdMobileNote">Built for phone testing, including Samsung Galaxy A54. Live wallpaper is not included in this browser preview. Media stays local; reopen it after restarting.</small>`;
+panel.querySelector('main>div').prepend(touchField);
+for(const id of ['pdTouchMode','pdTouchStrength','pdTapBursts','pdMobileQuality'])controls.push($(id));
+const dock=document.createElement('nav');dock.id='pdMobileDock';dock.setAttribute('aria-label','Animation controls');
+dock.innerHTML='<button id="pdShowSettings" aria-expanded="false">Settings</button><button id="pdMobilePause">Pause</button><button id="pdMobileNext">Next</button><button id="pdMobileFull">Fullscreen</button><button id="pdMobileHelpButton">Help</button>';
+document.body.append(dock);
+const help=document.createElement('aside');help.id='pdMobileHelp';help.innerHTML='<strong>Touch the drift</strong><br>Drag: attract or repel shapes<br>Tap: release a burst<br>Pinch: zoom · Two fingers: rotate<br><small>Use Settings for presets, images, music and touch strength. The playlist starts only when you choose.</small><button id="pdHelpDone">Start exploring</button>';
+document.body.append(help);
+panel.classList.add('hidden');
+function syncDock(){
+ $('pdShowSettings').setAttribute('aria-expanded',String(!panel.classList.contains('hidden')));
+ $('pdMobilePause').textContent=paused?'Resume':'Pause';
+}
+new MutationObserver(syncDock).observe(panel,{attributes:true,attributeFilter:['class']});
+$('pdShowSettings').onclick=()=>{help.classList.add('hidden');togglePanel();syncDock()};
+$('pdMobilePause').onclick=()=>{togglePause();syncDock()};
+$('pdMobileNext').onclick=()=>{help.classList.add('hidden');playing=false;advance();updateStatus();syncDock()};
+$('pdMobileHelpButton').onclick=()=>help.classList.toggle('hidden');
+$('pdHelpDone').onclick=()=>help.classList.add('hidden');
+$('pdMobileFull').onclick=async()=>{
+ try{
+  if(document.fullscreenElement)await document.exitFullscreen();
+  else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();
+  else{help.classList.remove('hidden');$('pdHelpDone').textContent='Continue in browser';}
+ }catch{help.classList.remove('hidden');$('pdHelpDone').textContent='Continue in browser';}
+};
+for(const field of panel.querySelectorAll('fieldset')){
+ const legend=field.querySelector(':scope>legend');if(!legend)continue;
+ const label=[...legend.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim();
+ const button=document.createElement('button');button.className='pd-fold';button.type='button';button.textContent=label||'Settings';
+ for(const n of [...legend.childNodes])if(n.nodeType===3)n.remove();
+ legend.prepend(button);
+ if(field!==touchField&&field.id!=='ringControls')field.classList.add('pd-collapsed');
+ const set=()=>button.setAttribute('aria-expanded',String(!field.classList.contains('pd-collapsed')));
+ button.onclick=()=>{field.classList.toggle('pd-collapsed');set()};set();
+}
+
+const points=new Map();let gesture=null,rotation=0,impulses=[];
+const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const angle=(a,b)=>Math.atan2(b.y-a.y,b.x-a.x);
+function xy(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+function startGesture(){
+ const p=[...points.values()];
+ gesture=p.length>=2?{distance:Math.max(1,distance(p[0],p[1])),angle:angle(p[0],p[1]),zoom:value('zoom'),rotation}:null;
+}
+canvas.onpointermove=null;
+canvas.oncontextmenu=e=>e.preventDefault();
+canvas.addEventListener('pointerdown',e=>{
+ if(!panel.classList.contains('hidden'))return;
+ e.preventDefault();help.classList.add('hidden');
+ const p=xy(e);points.set(e.pointerId,{...p,start:{...p},at:performance.now(),moved:false,multi:points.size>0});
+ if(points.size>1)for(const p of points.values())p.multi=true;
+ try{canvas.setPointerCapture(e.pointerId)}catch{}
+ if(points.size>=2)startGesture();
+});
+canvas.addEventListener('pointermove',e=>{
+ const p=points.get(e.pointerId);if(!p)return;e.preventDefault();
+ Object.assign(p,xy(e));if(distance(p,p.start)>12)p.moved=true;
+ mouse.x=p.x-W/2;mouse.y=p.y-H/2;
+ if(points.size>=2&&gesture){
+  const pair=[...points.values()];
+  const zoom=Math.max(Number($('zoom').min),Math.min(Number($('zoom').max),gesture.zoom*distance(pair[0],pair[1])/gesture.distance));
+  $('zoom').value=String(zoom);
+  const delta=angle(pair[0],pair[1])-gesture.angle;
+  rotation=gesture.rotation+Math.atan2(Math.sin(delta),Math.cos(delta));outputs();
+ }
+});
+function endPointer(e,cancelled){
+ const p=points.get(e.pointerId);if(!p)return;
+ if(!cancelled&&!p.moved&&!p.multi&&performance.now()-p.at<350&&checked('pdTapBursts')&&!paused){
+  impulses.push({x:p.x,y:p.y,born:performance.now()});
+  for(let i=0;i<12;i++)rings.push({age:i*.008,index:serial++,sides:chooseShape(),x:p.x-W/2,y:p.y-H/2,angle:rotation+i*.09,spin:Math.random()*2-1});
+ }
+ points.delete(e.pointerId);startGesture();scheduleSave();
+}
+canvas.addEventListener('pointerup',e=>endPointer(e,false));
+canvas.addEventListener('pointercancel',e=>endPointer(e,true));
+canvas.addEventListener('lostpointercapture',e=>{points.delete(e.pointerId);startGesture()});
+$('pdResetGesture').onclick=()=>{rotation=0;$('zoom').value='100';outputs();scheduleSave()};
+
+const oldOrigin=updateOrigin;
+window.updateOrigin=dt=>{
+ oldOrigin(dt);
+ if(points.size!==1||$('pdTouchMode').value==='off')return;
+ const p=[...points.values()][0],strength=value('pdTouchStrength')/100;
+ const direction=$('pdTouchMode').value==='repel'?-1:1;
+ const blend=1-Math.exp(-dt*(3+strength*16));
+ origin.x+=((p.x-W/2)*direction*strength-origin.x)*blend;
+ origin.y+=((p.y-H/2)*direction*strength-origin.y)*blend;
+};
+const oldDraw=drawRing;
+window.drawRing=(context,r)=>{
+ context.save();
+ try{context.translate(W/2,H/2);context.rotate(rotation);context.translate(-W/2,-H/2);oldDraw(context,r)}finally{context.restore()}
+};
+const oldRender=render;
+window.render=()=>{
+ oldRender();const now=performance.now();
+ if(!paused)impulses=impulses.filter(p=>now-p.born<900);
+ if(paused)return;
+ ctx.save();try{
+ for(const p of impulses){const age=(now-p.born)/900;ctx.globalAlpha=(1-age)*.65;ctx.strokeStyle='#7ce7f2';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,12+age*85,0,TAU);ctx.stroke()}
+ if(points.size===1){const p=[...points.values()][0];ctx.globalAlpha=.7;ctx.strokeStyle='#c3a5ff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,15,0,TAU);ctx.stroke()}
+ }finally{ctx.restore()}
+};
+function applyQuality(){
+ const quality=$('pdMobileQuality').value;
+ mobileFps=quality==='smooth'?60:quality==='battery'?24:30;
+ document.documentElement.dataset.mobilePixels=quality==='battery'?'720':quality==='smooth'?'1200':'960';
+ const cap=quality==='battery'?160:quality==='smooth'?600:360;
+ $('count').max=String(cap);$('count').value=String(Math.min(value('count'),cap));
+ for(let i=2;i<=3;i++){const input=$(`pdL${i}Count`);input.max=String(Math.floor(cap/2));input.value=String(Math.min(Number(input.value),Number(input.max)))}
+ resize();outputs();
+}
+$('pdMobileQuality').addEventListener('change',()=>{points.clear();gesture=null;applyQuality();scheduleSave()});
+const oldVisual=applyVisual;
+window.applyVisual=data=>{oldVisual(data);applyQuality();syncDock()};
+document.addEventListener('visibilitychange',()=>{
+ if(document.hidden){points.clear();gesture=null;impulses=[];}last=0;
+});
+addEventListener('resize',()=>{points.clear();gesture=null;impulses=[]});
+let hasSaved=false;
+try{const saved=localStorage.getItem(STORAGE);if(saved){restore(JSON.parse(saved));hasSaved=true}}catch{}
+if(!hasSaved){
+ $('count').value='100';$('lineWidth').value='1.5';$('trail').value='1.5';$('speed').value='55';
+ $('palette').value='rainbow';$('pdL2Enabled').checked=false;$('pdL3Enabled').checked=false;
+ $('pdFeedback').checked=false;$('pdMorphAuto').checked=false;
+}
+playing=false;applyQuality();renderLibrary();updateStatus();syncDock();scheduleSave();
+})();
+
+</script></html>

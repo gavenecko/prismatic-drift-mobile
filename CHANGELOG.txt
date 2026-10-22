@@ -1,0 +1,8 @@
+0.2.0-test1 - first mobile browser prototype
+- Phone-sized glass controls and collapsible sections.
+- Bottom toolbar for settings, pause, next preset, fullscreen and help.
+- Drag attraction/repulsion, tap bursts, pinch zoom, two-finger rotation.
+- Performance presets with frame-rate, resolution and shape-count limits.
+- Separate saved settings; playlist remains manually controlled.
+- Keeps the existing images, audio, layers, morphing and palette fixes.
+- No Windows changes, APK, operating-system wallpaper or store submission.

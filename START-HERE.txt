@@ -1,0 +1,86 @@
+GAVENECKO'S PRISMATIC DRIFT - MOBILE PREVIEW
+0.2.0-test1 - 22 October 2026
+
+This is a browser test build for phones, including the Samsung Galaxy A54.
+It is not an APK and does not install a live wallpaper. Your existing Windows
+release has not been changed. No Google Play account or fee is needed for
+this browser test.
+
+RECOMMENDED WAY TO TEST ON YOUR PHONE
+1. Create a separate itch.io test project, so the public desktop release
+   stays as it is. Use a name such as Prismatic Drift - Mobile Test.
+2. Set its kind to HTML / HTML Game.
+3. Upload Prismatic-Drift-Mobile-0.2.0-test1.zip, and mark it as the file
+   played in the browser. index.html is already at the root of the ZIP.
+4. In Embed options, choose Click to launch in fullscreen, enable Mobile
+   Friendly, and keep Click to Play enabled.
+5. Keep the page restricted or unlisted while testing. If using restricted
+   access, sign in with the same itch.io account on your phone or use the
+   access settings supplied by itch.io.
+6. Open the test page in Chrome or Samsung Internet on the Galaxy A54 and
+   tap Launch. Begin in portrait orientation and Balanced performance.
+
+ALTERNATIVE
+The separate Prismatic-Drift-Mobile-Test.html contains the whole prototype.
+You can transfer it to the phone and try opening it with a browser, but
+Android file viewers and content:// permissions can prevent HTML scripts,
+audio or file selection from working. Hosted testing on itch.io is more
+reliable. The ZIP also works on another static web host that serves HTML.
+
+TOUCH CONTROLS
+One finger: attract the origin of newly appearing shapes toward your finger.
+Tap: release a burst with a fading ripple.
+Two fingers: pinch to zoom and twist to rotate the scene.
+Settings: change Touch effect to Repel or Off, or change touch strength.
+Reset zoom and rotation: return gesture changes to their starting values.
+Only the animation responds to gestures; settings controls scroll normally.
+Touch effects currently influence the main shape population; extra layers
+retain their independent motion.
+
+BOTTOM TOOLBAR
+Settings: open the collapsible, phone-sized control panel.
+Pause/Resume: pause or restart animation.
+Next: select the next preset without starting automatic cycling.
+Fullscreen: request browser fullscreen, where supported.
+Help: reopen the gesture instructions.
+
+PERFORMANCE
+Battery saver: 24 fps target, max 720px render dimension, 160 main shapes.
+Balanced: 30 fps target, max 960px render dimension, 360 main shapes.
+Smooth: 60 fps target, max 1200px render dimension, 600 main shapes.
+Frame rate is a target, not a promise. Complex layers, morphing, long trails,
+large images and feedback can reduce performance. Reduce those first if
+the phone becomes warm or the animation stutters. Rendering pauses when
+the page is hidden. A visible page continues to consume battery.
+
+SETTINGS AND MEDIA
+Mobile test settings use separate browser storage from the desktop edition.
+The playlist starts only when you choose Start playlist. Save/Load settings
+are available for backup; storage may be cleared by your browser or private
+browsing. Images and music are selected locally and must be reopened after
+restarting. Music playback requires a user action and browser support.
+The phone's aspect ratio and settings layout adapt when it rotates, but the
+current trails are cleared during resizing. A browser page cannot set itself
+as an Android live wallpaper.
+
+PLEASE TEST
+- Portrait: settings readable, no clipped sliders, close/reopen works.
+- Landscape: animation fits, settings scroll and toolbar stays reachable.
+- Drag, tap bursts, pinch zoom, twist and gesture reset.
+- Switch Attract/Repel/Off; disable tap bursts if desired.
+- Pause, Next, manually start/stop the playlist.
+- Select an image and a short local audio file.
+- Background the browser, return, and check animation still works.
+- Reload, check saved settings and export a settings backup.
+- Compare Battery saver and Balanced for a few minutes.
+
+Report the browser, Android version, performance setting and steps if you
+find a problem. This build has source/syntax and simulated touch checks;
+it has not been verified on a physical Galaxy A54 yet.
+
+NEXT STAGE
+Use your feedback to tune touch feel and performance. An installable Android
+build and a native live wallpaper service are separate follow-up work.
+
+ITCH.IO UPLOAD REFERENCE
+https://itch.io/docs/creators/html5

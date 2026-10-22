@@ -1,0 +1,20 @@
+GAVENECKO'S PRISMATIC DRIFT - FREEWARE LICENSE
+Copyright (c) 2026 Gavenecko. All rights reserved except as granted below.
+
+You may download and use Prismatic Drift free of charge, and share exact,
+unmodified copies of this release free of charge. Keep the credits, this
+license, and all third-party license notices with copies you share.
+
+This permission does not grant the right to modify or rebrand the application,
+sell copies, or imply endorsement by Gavenecko. Additional permission may be
+requested from Gavenecko. User-created images, music, presets and artwork
+remain subject to their own rights; this license does not claim them.
+
+Third-party components are governed by their own licenses. Nothing here
+limits rights granted by those licenses. This license applies to Prismatic
+Drift and does not grant rights to the original Zone Rings software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, TO THE
+EXTENT PERMITTED BY APPLICABLE LAW. TO THAT SAME EXTENT, THE AUTHOR IS NOT
+LIABLE FOR DAMAGES ARISING FROM ITS USE. Statutory rights that cannot be
+excluded remain unaffected.
