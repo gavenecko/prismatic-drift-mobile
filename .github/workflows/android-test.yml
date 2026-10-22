@@ -31,12 +31,12 @@ jobs:
       - name: Package test APK
         run: |
           mkdir -p android-download
-          cp android-preview/app/build/outputs/apk/debug/app-debug.apk android-download/Prismatic-Drift-0.3.0-test1.apk
+          cp android-preview/app/build/outputs/apk/debug/app-debug.apk android-download/Prismatic-Drift-0.3.0-test2.apk
           cp android-preview/LICENSE.txt android-preview/CREDITS.txt android-preview/INSTALL-AND-TEST.txt android-download/
-          sha256sum android-download/Prismatic-Drift-0.3.0-test1.apk > android-download/SHA256SUMS.txt
+          sha256sum android-download/Prismatic-Drift-0.3.0-test2.apk > android-download/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Prismatic-Drift-Android-0.3.0-test1
+          name: Prismatic-Drift-Android-0.3.0-test2
           path: android-download/
           retention-days: 30
       - uses: actions/upload-artifact@v4
